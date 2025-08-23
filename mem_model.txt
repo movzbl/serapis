@@ -1,0 +1,53 @@
+Memory is divided into slots like this:
+
+  +----------+----------+----------+----------+----------+
+  |  SLOT 0  |  SLOT 1  |  SLOT 2  |   ...    |  SLOT N  |
+  +----------+----------+----------+----------+----------+
+
+Each slot is 1GB. The size of the whole address space is 256TB.
+
+Kernel owns n slots that cover the address space that is mapped
+to RAM. By identity-mapping the first n slots of the virtual address space
+to RAM, the kernel can access RAM pages directly with their physical
+addresses without need for storing their virtual addresses in kernel
+memory.
+
+Kernel can also allocate one extra slot for the frame buffer. So
+in total the first n+1 slots are used by the kernel. There is no on
+RAM size, yet practically there will be about ~256GB of RAM in
+a powerful PC, covering only 1/1024 of 256TB the address space.
+
+Each program owns 4 slots at least:
+
+  - one slot for program image.
+  - one slot for the heap.
+  - one slot for shmem.
+  - one slot for the stacks.
+
+Each program has its own page table, with the corresponding
+slots (as well as kernel slots) marked as "P":
+
+  - PML4: level-4 table, contains 512 entries to PDPTs.
+  - PDPT: level-3 table, contains 512 entries, each represnting slot's PD.
+
+Each slot has two-level page tables representing it:
+
+  - PD:   level-2 table, contains 512 entries to PT.
+  - PT:   level-1 table, contains 512 entries to 4KB pages of RAM.
+
+So for example, if program X is using slots 5,6,7, while kernel is
+using slots 0,1, then the PDPTs of program X will contain
+entries referring to PD's of slots 0,1,5,6,7. Thus, the address
+space of the program exposes the slots that it is concerned with.
+
+Now since PCID is a very viable option that reduces TLB flushes greatly,
+I prefer to give each running program its own PCID as well. This means
+we can have up to 4096 programs.
+
+When a thread belonging to program X gets scheduled, we load CR3 with
+the address of PML4 corresponding to program X, and we set bits 0..11
+to the PCID of that program, thus preventing unnecessary TLB flushes
+when we switch between programs/PCIDs.
+
+------------------------------------------------------------------------------
+
